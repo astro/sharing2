@@ -1,0 +1,10 @@
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>#{pageTitle pc}
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+    <link rel="shortcut icon" href="/static/favicon.png">
+    ^{pageHead pc}
+  <body>
+    <div #page>
+      ^{pageBody pc}
