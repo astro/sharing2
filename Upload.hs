@@ -13,9 +13,9 @@ import System.IO
 
 
 data UploadProgress = UploadProgress
-    { uploadStart :: UTCTime
-    , uploadBytes :: TVar Integer
-    }
+                      { uploadStart :: UTCTime
+                      , uploadBytes :: TVar Integer
+                      }
 
 newUploadProgress :: IO UploadProgress
 newUploadProgress = UploadProgress <$>
@@ -31,6 +31,11 @@ readUploadProgress (UploadProgress start tBytes) =
                (fromIntegral bytes) / (now `diffUTCTime` start))
     where unDiffTime = fromRational . toRational
 
+increaseUploadProgress :: UploadProgress -> Integer -> IO ()
+increaseUploadProgress progress delta =
+    atomically $
+    modifyTVar' (uploadBytes progress) 
+                    (+ delta)
 
 -- | sinkRequestBody with our own backend to:
 -- 
@@ -43,10 +48,8 @@ acceptUpload waiReq progress newFile =
                await >>=
                maybe (return ())
                (\s ->
-                    do liftIO $
-                              atomically $
-                              modifyTVar' (uploadBytes progress) 
-                                              (+ (fromIntegral $ B.length s))
+                    do liftIO $ 
+                              increaseUploadProgress progress $ fromIntegral $ B.length s
                        yield s
                        countBytes
                )

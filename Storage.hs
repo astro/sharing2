@@ -142,9 +142,10 @@ doSyncStorage storage =
        renameFile statePathTmp statePath
 
 data UploadingFile = UploadingFile
-    { filePath :: FilePath
-    , fileCommit :: T.Text -> T.Text -> Integer -> IO ()
-    , fileDiscard :: IO ()
+    { uFileId :: Integer
+    , uFilePath :: FilePath
+    , uFileCommit :: T.Text -> T.Text -> Integer -> IO ()
+    , uFileDiscard :: IO ()
     }
 
 -- TODO: discard old files
@@ -163,8 +164,9 @@ newFile storage =
                   "/" ++
                   show nextId
        return $ UploadingFile
-                  { filePath = path
-                  , fileCommit = \name type_ size -> do
+                  { uFileId = nextId
+                  , uFilePath = path
+                  , uFileCommit = \name type_ size -> do
                       date <- getPOSIXTime
                       let fileInfo =
                             FileInfo nextId name type_ 0 date size
@@ -175,7 +177,7 @@ newFile storage =
                                    
                       hPutStrLn stderr $ "committed"
                       shouldSyncStorage storage
-                  , fileDiscard =
+                  , uFileDiscard =
                       removeFile path
                   }
 

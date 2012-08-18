@@ -14,6 +14,7 @@ import qualified Data.ByteString.Char8 as BC
 import Control.Monad.Trans.Resource (register)
 import Data.IORef
 import Data.Time.Clock.POSIX
+import Control.Concurrent
 
 import Storage
 import Upload
@@ -24,10 +25,19 @@ data Settings = Settings
     { settingsPort :: Int
     }
     
+-- | An uploader with Token may query the state and set the
+-- description afterwards
+data TokenState = Uploading UploadProgress
+                | Uploaded
+                  { uploadFileId :: Integer
+                  , uploadLink :: T.Text
+                  , uploadLastActivity :: POSIXTime
+                  }
+    
 data Sharing = Sharing
     { sharingSettings :: Settings
     , sharingStorage :: Storage
-    , sharingTokens :: TokenPool UploadProgress
+    , sharingTokens :: TokenPool TokenState
     , getStatic :: Static
     }
     
@@ -35,6 +45,7 @@ mkYesod "Sharing" [parseRoutes|
                    / HomeR GET
                    /upload/#Token UploadR POST
                    /progress/#Token ProgressR GET
+                   /describe/#Token DescribeR POST
                    /file/#Integer/#T.Text FileR GET
                    /static StaticR Static getStatic
                    |]
@@ -124,31 +135,58 @@ postUploadR token =
             do committed' <- readIORef committed
                when (not committed') $
                     hPutStrLn stderr "discard" >>
-                    fileDiscard file
+                    uFileDiscard file
        
        progress <- liftIO $ newUploadProgress
-       when (not $ T.null $ unToken token) $ do
-         -- TODO: mv progress here
-         tokenPool <- sharingTokens <$> getYesod
-         liftIO $ newToken tokenPool token progress
+       tokenPool <- sharingTokens <$> getYesod
+       let useToken = not $ T.null $ unToken token
+       when useToken $ do
+         liftIO $ newToken token (Uploading progress) tokenPool
          liftIO $ hPutStrLn stderr $ "New token " ++ show token
-         --register $ forkIO $ deleteToken tokenPool token
+         let tokenCleanInterval = 30
+             tokenCleaner = do
+               threadDelay tokenCleanInterval
+               now <- getPOSIXTime
+               let canDelete (Uploaded _ _ lastActivity) =
+                     lastActivity + tokenCleanInterval < now
+                   canDelete _ =
+                     True
+               deleted <-
+                   mayDeleteToken token canDelete tokenPool
+               hPutStrLn stderr $ "Delete token " ++ show token ++ ": " ++ show deleted
+               when (not deleted)
+                    tokenCleaner
+         _ <- register $ do
+                _ <- forkIO $ tokenCleaner
+                return ()
+         return ()
        
 
        mFileInfo <-
          lift $ 
-         acceptUpload waiReq progress $ filePath file
+         acceptUpload waiReq progress $ uFilePath file
        liftIO $ hPutStrLn stderr $ "acceptUpload -> " ++ show mFileInfo
        
        case mFileInfo of
-         Just (name, type_, size) ->
-             liftIO $
-             do fileCommit file (bToT name) (bToT type_) size
-                writeIORef committed True
-         _ ->
-             -- discarded by action register'ed above
-             return ()
-
+         Just (name, type_, size) -> do
+                        link <- ($ FileR (uFileId file) (bToT name)) <$>
+                                getUrlRender
+                        liftIO $ do
+                          uFileCommit file (bToT name) (bToT type_) size
+                          writeIORef committed True
+                          when useToken $
+                               do now <- getPOSIXTime
+                                  writeToken token Uploaded 
+                                                 { uploadFileId = uFileId file
+                                                 , uploadLink = link
+                                                 , uploadLastActivity = now
+                                                 } tokenPool
+         _ -> do
+           -- discarded by action register'ed above
+           when useToken $
+                liftIO $
+                deleteToken token tokenPool
+             
        defaultLayout $ do
          setTitle "Uploaded!"
          toWidget [hamlet|
@@ -158,20 +196,31 @@ postUploadR token =
                    |]
            where bToT = T.pack . BC.unpack
     
+postDescribeR :: Token -> GHandler sub Sharing RepJson
+postDescribeR token =
+    undefined
+  
 getProgressR :: Token -> GHandler sub Sharing RepJson
 getProgressR token =
     do tokenPool <- sharingTokens <$> getYesod
-       mProgress <-
+       mState <-
            liftIO $
-           readToken tokenPool token
-       case mProgress of
-         Just progress ->
+           readToken token tokenPool
+       case mState of
+         Just (Uploading progress) ->
              do (bytes, rate) <- liftIO $ readUploadProgress progress
                 liftIO $ hPrint stderr ("progress", bytes, rate)
                 return $ RepJson $ toContent $
                        object [ "bytes" .= bytes
                               , "rate" .= rate
                               ]
+         Just upload@(Uploaded _ _ _) -> 
+             liftIO $
+             do now <- getPOSIXTime
+                writeToken token upload { uploadLastActivity = now } tokenPool
+                liftIO $ hPutStrLn stderr $ "Token " ++ show token ++ " refreshed to " ++ show now
+                return $ RepJson $ toContent $
+                       object [ "link" .= uploadLink upload ]
          _ ->
              notFound
 

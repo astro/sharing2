@@ -26,14 +26,20 @@ createTokenPool =
     TokenPool <$>
     newTVarIO HM.empty
     
-readToken :: TokenPool a -> Token -> IO (Maybe a)
-readToken (TokenPool tMap) token =
+readToken :: Token -> TokenPool a -> IO (Maybe a)
+readToken token (TokenPool tMap) =
     atomically $
     HM.lookup token <$>
     readTVar tMap
+    
+writeToken :: Token -> a -> TokenPool a -> IO ()
+writeToken token a (TokenPool tMap) =
+    atomically $
+    modifyTVar' tMap $
+    HM.insert token a
 
-newToken :: TokenPool a -> Token -> a -> IO Bool
-newToken (TokenPool tMap) token a =
+newToken :: Token -> a -> TokenPool a -> IO Bool
+newToken token a (TokenPool tMap) =
     atomically $ do
       m <- readTVar tMap
       case token `HM.member` m of
@@ -44,8 +50,24 @@ newToken (TokenPool tMap) token a =
         True ->
           return False
 
-deleteToken :: TokenPool a -> Token -> IO ()
-deleteToken (TokenPool tMap) token =
+deleteToken :: Token -> TokenPool a -> IO ()
+deleteToken  token(TokenPool tMap) =
     atomically $
     modifyTVar' tMap $
     HM.delete token
+
+mayDeleteToken :: Token -> (a -> Bool) -> TokenPool a -> IO Bool
+mayDeleteToken token f (TokenPool tMap) =
+    atomically $ do
+      m <- readTVar tMap
+      case token `HM.lookup` m of
+        Just a | f a -> do
+                   -- Predicate f said: delete
+                   writeTVar tMap $ HM.delete token m
+                   return True
+        Just _ ->
+            -- Predicate f said: don't delete
+            return False
+        Nothing ->
+            -- Didn't exist at all, deleted
+            return True
