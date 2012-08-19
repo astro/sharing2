@@ -80,8 +80,7 @@ getHomeR =
                          enctype="multipart/form-data"
                          action=@{UploadR $ Token ""}>
                      <input id="file" name="file" type="file" size="8">
-                     <input #submit
-                           type="submit" value="Upload">
+                     <input type="submit" value="Upload">
                  <ul #down>
                    $forall file <- files
                      <li>
