@@ -27,12 +27,16 @@ data Settings = Settings
     
 -- | An uploader with Token may query the state and set the
 -- description afterwards
-data TokenState = Uploading UploadProgress
+data TokenState = Uploading 
+                  { uploadProgress :: UploadProgress
+                  , uploadDescription :: Maybe T.Text
+                  }
                 | Uploaded
                   { uploadFileId :: Integer
                   , uploadLink :: T.Text
                   , uploadLastActivity :: POSIXTime
                   }
+                deriving (Show)
     
 data Sharing = Sharing
     { sharingSettings :: Settings
@@ -141,7 +145,7 @@ postUploadR token =
        tokenPool <- sharingTokens <$> getYesod
        let useToken = not $ T.null $ unToken token
        when useToken $ do
-         liftIO $ newToken token (Uploading progress) tokenPool
+         liftIO $ newToken token (Uploading progress Nothing) tokenPool
          liftIO $ hPutStrLn stderr $ "New token " ++ show token
          let tokenCleanInterval = 30
              tokenCleaner = do
@@ -172,15 +176,25 @@ postUploadR token =
                         link <- ($ FileR (uFileId file) (bToT name)) <$>
                                 getUrlRender
                         liftIO $ do
-                          uFileCommit file (bToT name) (bToT type_) size
+                          mDescription <- case useToken of
+                            True ->
+                                do mToken <- readToken token tokenPool
+                                   let mDescription = case mToken of
+                                         Just (Uploading _ mDescription) ->
+                                             mDescription
+                                         _ ->
+                                             Nothing
+                                   now <- getPOSIXTime
+                                   writeToken token Uploaded 
+                                                  { uploadFileId = uFileId file
+                                                  , uploadLink = link
+                                                  , uploadLastActivity = now
+                                                  } tokenPool
+                                   return mDescription
+                            False ->
+                                return Nothing
+                          uFileCommit file (bToT name) (bToT type_) size mDescription
                           writeIORef committed True
-                          when useToken $
-                               do now <- getPOSIXTime
-                                  writeToken token Uploaded 
-                                                 { uploadFileId = uFileId file
-                                                 , uploadLink = link
-                                                 , uploadLastActivity = now
-                                                 } tokenPool
          _ -> do
            -- discarded by action register'ed above
            when useToken $
@@ -198,7 +212,29 @@ postUploadR token =
     
 postDescribeR :: Token -> GHandler sub Sharing RepJson
 postDescribeR token =
-    undefined
+    do description <- lookupPostParam "description"
+       tokenPool <- sharingTokens <$> getYesod
+       mState <-
+           liftIO $
+           readToken token tokenPool
+       storage <- sharingStorage <$> getYesod
+       let response = RepJson $ toContent $
+                      object ([] :: [(T.Text, String)])
+       liftIO $ hPutStrLn stderr $ "postDescribeR, tokenState=" ++ show mState
+       case mState of
+         Just upload@(Uploading _ Nothing) -> 
+             do liftIO $
+                       writeToken token upload 
+                                      { uploadDescription = description 
+                                      } tokenPool
+                return response
+         Just upload@(Uploaded _ _ _) ->
+             do liftIO $
+                       setDescription (uploadFileId upload) description storage
+                return response
+         _ ->
+             notFound
+
   
 getProgressR :: Token -> GHandler sub Sharing RepJson
 getProgressR token =
@@ -207,7 +243,7 @@ getProgressR token =
            liftIO $
            readToken token tokenPool
        case mState of
-         Just (Uploading progress) ->
+         Just (Uploading progress _) ->
              do (bytes, rate) <- liftIO $ readUploadProgress progress
                 liftIO $ hPrint stderr ("progress", bytes, rate)
                 return $ RepJson $ toContent $

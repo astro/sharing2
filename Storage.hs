@@ -1,6 +1,5 @@
 module Storage where
 
-import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy.Char8 as LBC
 import Control.Applicative
 import Data.Aeson
@@ -13,7 +12,6 @@ import qualified Data.Text as T
 import Data.Time.Clock.POSIX
 import System.Directory
 import System.IO  -- tmp
-import Data.Time.Clock.POSIX
 
 
 -- | Model for stored files
@@ -24,6 +22,7 @@ data FileInfo = FileInfo
     , fileDownloads :: Integer
     , fileDate :: POSIXTime
     , fileSize :: Integer
+    , fileDescription :: Maybe T.Text
     }
     deriving (Show)
 
@@ -35,18 +34,21 @@ instance FromJSON FileInfo where
                          v .: "downloads" <*>
                          ((/ 1000) . (fromIntegral :: (Integer -> POSIXTime)) <$> 
                           v .: "date") <*>
-                         v .: "size"
+                         v .: "size" <*>
+                         v.:? "description"
   parseJSON _          = empty
   
 instance ToJSON FileInfo where
-  toJSON (FileInfo id name type_ downloads date size) =
-         object [ "id" .= id
-                , "name" .= name
-                , "type" .= type_
-                , "downloads" .= downloads
-                , "date" .= (truncate (date * 1000) :: Integer)
-                , "size" .= size
-                ]
+  toJSON (FileInfo fId name type_ downloads date size mDescription) =
+         object $
+         [ "id" .= fId
+         , "name" .= name
+         , "type" .= type_
+         , "downloads" .= downloads
+         , "date" .= (truncate (date * 1000) :: Integer)
+         , "size" .= size
+         ] ++ 
+         maybe [] ((:[]) . ("description" .=)) mDescription
 
 newtype Files = Files { unFiles :: [FileInfo] }
 
@@ -116,7 +118,7 @@ maySyncStorage storage should =
                     return False
 
        when doSync $ do
-         forkIO $ do
+         _ <- forkIO $ do
            doSyncStorage storage
            -- Release the lock
            atomically $
@@ -144,7 +146,7 @@ doSyncStorage storage =
 data UploadingFile = UploadingFile
     { uFileId :: Integer
     , uFilePath :: FilePath
-    , uFileCommit :: T.Text -> T.Text -> Integer -> IO ()
+    , uFileCommit :: T.Text -> T.Text -> Integer -> Maybe T.Text -> IO ()
     , uFileDiscard :: IO ()
     }
 
@@ -166,10 +168,10 @@ newFile storage =
        return $ UploadingFile
                   { uFileId = nextId
                   , uFilePath = path
-                  , uFileCommit = \name type_ size -> do
+                  , uFileCommit = \name type_ size mDescription -> do
                       date <- getPOSIXTime
                       let fileInfo =
-                            FileInfo nextId name type_ 0 date size
+                            FileInfo nextId name type_ 0 date size mDescription
                       atomically $ do
                         tFileInfo <- newTVar fileInfo
                         modifyTVar' (storageFiles storage) $
@@ -213,3 +215,17 @@ getFile fId fName storage =
     in atomically getFile' <*
        shouldSyncStorage storage
              
+setDescription :: Integer -> Maybe T.Text -> Storage -> IO ()
+setDescription fId mDescription storage =
+    do hPutStrLn stderr $ "set desc: " ++ show mDescription
+       atomically $ do 
+         mtFi <- Map.lookup fId <$>
+                 readTVar (storageFiles storage)
+         case mtFi of
+           Just tFi ->
+               modifyTVar' tFi $ \fi ->
+               fi { fileDescription = mDescription }
+           Nothing ->
+               return ()
+       shouldSyncStorage storage
+         

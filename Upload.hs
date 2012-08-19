@@ -17,6 +17,9 @@ data UploadProgress = UploadProgress
                       , uploadBytes :: TVar Integer
                       }
 
+instance Show UploadProgress where
+    show _ = "<<UploadProgress>>"
+
 newUploadProgress :: IO UploadProgress
 newUploadProgress = UploadProgress <$>
                     getCurrentTime <*>
