@@ -74,17 +74,18 @@ data Storage = Storage
 createStorage :: FilePath -> FilePath -> IO Storage
 createStorage statePath filesPath =
   do fileInfos <-
-         unFiles <$>
-         fromMaybe (Files []) <$>
-         decode <$> 
-         LBC.readFile statePath
+         catch (unFiles <$>
+                fromMaybe (Files []) <$>
+                decode <$> 
+                LBC.readFile statePath
+               ) (const $ return [])
      files <-
          Map.fromList <$>
          forM fileInfos 
          (\fi ->
               (fileId fi, ) <$> newTVarIO fi
          )
-     let nextId = 1 + maximum (map fileId fileInfos)
+     let nextId = 1 + maximum (0 : map fileId fileInfos)
          
      seq nextId $
             Storage <$>
