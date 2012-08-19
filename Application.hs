@@ -88,6 +88,9 @@ getHomeR =
                        <a href=@{FileR (fileId file) (fileName file)}
                           type=#{fileType file}>#{fileName file}
                        <span .size>#{humanSize $ fileSize file}
+                       $maybe description <- fileDescription file
+                         <span .desc>#{description}
+                       <span .desc>
                        <span .stats>
                          <b>#{fileDownloads file}×</b>
                          \ in #{showAge $ fileDate file}
