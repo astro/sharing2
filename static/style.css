@@ -82,6 +82,7 @@ a:visited {
     padding: 0 0 0 16px;
     font-size: 80%;
     color: #888;
+    white-space: pre;
 }
 .stats {
     display: block;
