@@ -173,7 +173,8 @@ postUploadR token =
           
           useToken = not $ T.null $ unToken token
           
-          tokenCleanInterval = 30 * 1000 * 1000
+          tokenLifetime = 30
+          tokenCleanInterval = tokenLifetime * 1000 * 1000
           
           createTokenHandlers progress
               | not useToken =
@@ -217,7 +218,7 @@ postUploadR token =
                                   -- Let token timeout (Client JS
                                   -- periodically refreshes
                                   -- lastActivity)
-                                  lastActivity + tokenCleanInterval < now
+                                  lastActivity + tokenLifetime < now
                               canDelete _ =
                                   -- Still uploading? register'ed is
                                   -- called after all
