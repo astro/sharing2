@@ -110,6 +110,7 @@ getHomeR =
                                     then (n', unit)
                                     else (n' / 1024, [unit'])
                                ) (n, "") "KMGT"
+          pluralize :: Integer -> String -> String
           pluralize 1 w = "1 " ++ w
           pluralize n w = show n ++ " " ++ w ++ "s"
           formatAge :: POSIXTime -> String
@@ -117,7 +118,7 @@ getHomeR =
                                    if n' < unit
                                    then r
                                    else pluralize (n' `div` unit) unitName
-                              ) (pluralize n "second")
+                              ) (pluralize n' "second")
                         [ (60, "minute")
                         , (60 * 60, "hour")
                         , (24 * 60 * 60, "day")
