@@ -173,7 +173,7 @@ postUploadR token =
           
           useToken = not $ T.null $ unToken token
           
-          tokenCleanInterval = 30
+          tokenCleanInterval = 30 * 1000 * 1000
           
           createTokenHandlers progress
               | not useToken =
