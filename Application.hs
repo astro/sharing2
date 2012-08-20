@@ -146,6 +146,7 @@ postUploadR token =
        progress <- liftIO $ newUploadProgress
        tokenUploadedHandler <- createTokenHandlers progress
 
+       -- Consume the upload:
        mFileInfo <-
          lift $ 
          acceptUpload waiReq progress $ uFilePath file
@@ -158,7 +159,7 @@ postUploadR token =
                         writeIORef committed True
          _ ->
              -- Token will be deleted by register'ed tokenCleaner
-             return ()
+             invalidArgs ["Missing file"]
              
        defaultLayout $ do
          setTitle "Uploaded!"
@@ -172,50 +173,66 @@ postUploadR token =
           
           useToken = not $ T.null $ unToken token
           
+          tokenCleanInterval = 30
+          
           createTokenHandlers progress
               | not useToken =
                   return $ const $ const $ return Nothing
               | otherwise = 
-                  do tokenPool <- sharingTokens <$> getYesod
-                     liftIO $ newToken token (Uploading progress Nothing) tokenPool
-                     let tokenCleanInterval = 30
-                         tokenCleaner = do
-                           threadDelay tokenCleanInterval
-                           now <- getPOSIXTime
-                           let canDelete (Uploaded _ _ lastActivity) =
-                                   lastActivity + tokenCleanInterval < now
-                               canDelete _ =
-                                   True
-                           deleted <-
-                               mayDeleteToken token canDelete tokenPool
-                           hPutStrLn stderr $ "Delete token " ++ show token ++ ": " ++ show deleted
-                           when (not deleted)
-                                tokenCleaner
-                     _ <- register $ do
-                            _ <- forkIO $ tokenCleaner
-                            return ()
+                  do 
+                    -- 1: Setup
+                    tokenPool <- sharingTokens <$> getYesod
+                    liftIO $ newToken token (Uploading progress Nothing) tokenPool
+                     
+                    -- 2: Get called when upload data (filename) is
+                    -- known, but keep token around for setting description
+                    let tokenUploadedHandler fId name =
+                            do link <- ($ FileR fId name) <$>
+                                       getUrlRender
+                               mToken <- liftIO $
+                                         readToken token tokenPool
+                               let mDescription = 
+                                       case mToken of
+                                         Just (Uploading _ mDescription) ->
+                                             mDescription
+                                         _ ->
+                                             Nothing
+                               now <- liftIO getPOSIXTime
+                               liftIO $
+                                      writeToken token 
+                                      Uploaded 
+                                      { uploadFileId = fId
+                                      , uploadLink = link
+                                      , uploadLastActivity = now
+                                      } tokenPool
+                               return mDescription
 
-                     let tokenUploadedHandler fId name =
-                             do link <- ($ FileR fId name) <$>
-                                        getUrlRender
-                                mToken <- liftIO $
-                                          readToken token tokenPool
-                                let mDescription = 
-                                        case mToken of
-                                          Just (Uploading _ mDescription) ->
-                                              mDescription
-                                          _ ->
-                                              Nothing
-                                now <- liftIO getPOSIXTime
-                                liftIO $
-                                       writeToken token 
-                                       Uploaded 
-                                       { uploadFileId = fId
-                                       , uploadLink = link
-                                       , uploadLastActivity = now
-                                       } tokenPool
-                                return mDescription
-                     return tokenUploadedHandler
+                    -- 3: Register periodical token cleaner
+                    let tokenCleaner = do
+                          threadDelay tokenCleanInterval
+                          now <- getPOSIXTime
+                          let canDelete (Uploaded _ _ lastActivity) =
+                                  -- Let token timeout (Client JS
+                                  -- periodically refreshes
+                                  -- lastActivity)
+                                  lastActivity + tokenCleanInterval < now
+                              canDelete _ =
+                                  -- Still uploading? register'ed is
+                                  -- called after all
+                                  -- processing. Delete:
+                                  True
+                          deleted <-
+                              mayDeleteToken token canDelete tokenPool
+                          hPutStrLn stderr $ "Delete token " ++ show token ++ ": " ++ show deleted
+                          when (not deleted)
+                               tokenCleaner
+                    -- When the POST request is done, start to
+                    -- periodically check if we can drop the token
+                    _ <- register $ do
+                           _ <- forkIO $ tokenCleaner
+                           return ()
+
+                    return tokenUploadedHandler
 
 postDescribeR :: Token -> GHandler sub Sharing RepJson
 postDescribeR token =
