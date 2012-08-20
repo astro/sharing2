@@ -71,3 +71,5 @@ executable         sharing
     hs-source-dirs:    dist
     build-depends:     base
                      , sharing-is-caring
+                     , warp                      >= 1.3        && < 1.4
+                     , network-conduit           >= 0.5        && < 0.6

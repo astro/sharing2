@@ -18,10 +18,6 @@ import Upload
 import Tokens
 
 
-data Settings = Settings
-    { settingsPort :: Int
-    }
-    
 -- | An uploader with Token may query the state and set the
 -- description afterwards
 data TokenState = Uploading 
@@ -36,8 +32,7 @@ data TokenState = Uploading
                 deriving (Show)
     
 data Sharing = Sharing
-    { sharingSettings :: Settings
-    , sharingStorage :: Storage
+    { sharingStorage :: Storage
     , sharingTokens :: TokenPool TokenState
     , getStatic :: Static
     }
@@ -304,13 +299,13 @@ getFileR fId fName =
     maybe notFound (return . uncurry RepFile)
 
 
--- | Main, starts web server
-run :: Settings -> IO ()
-run settings =
+-- | Constructs application
+app :: IO Application
+app =
+    toWaiAppPlain =<<
     do storage <- createStorage "files.json" "files"
        tokenPool <- createTokenPool
        s <- static "static"
-       warp (settingsPort settings) $
-            Sharing settings storage tokenPool s
+       return $ Sharing storage tokenPool s
 
   
