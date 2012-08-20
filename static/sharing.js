@@ -4,7 +4,7 @@
 
 function generateToken() {
     return (new Date().getTime()) +
-	"#" +
+	"+" +
 	Math.round(999999 * Math.random());
 }
 
