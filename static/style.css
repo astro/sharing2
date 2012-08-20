@@ -35,7 +35,8 @@ h1 {
     display: inline;
     margin: 0.5em auto;
     padding: 0 0 0 22px;
-    background: url(/static/up.png) no-repeat center left;
+    background: url(/static/up.png) no-repeat bottom left;
+    min-height: 22px;
 }
 p.hint {
     font-size: 70%;
