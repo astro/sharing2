@@ -83,17 +83,12 @@ createStorage statePath filesPath =
                  ) (\(_ :: E.IOException) -> 
                         return []
                    )
-     files' <-
-         filterM (\fi ->
-                   print fi >>
-                   return True
-                 ) files
      filesMap <-
          Map.fromList <$>
          mapM (\fi ->
                    (fileId fi, ) <$> newTVarIO fi
-              ) files'
-     let nextId = 1 + maximum (0 : map fileId files')
+              ) files
+     let nextId = 1 + maximum (0 : map fileId files)
          
      seq nextId $
             Storage <$>
@@ -168,7 +163,6 @@ newFile storage =
              nextId' `seq`
                      writeTVar (storageNextId storage) nextId'
              return nextId
-       hPrint stderr $ "nextId=" ++ show nextId
        
        let path = storageFilesPath storage ++
                   "/" ++
@@ -225,8 +219,7 @@ getFile fId fName storage =
              
 setDescription :: Integer -> Maybe T.Text -> Storage -> IO ()
 setDescription fId mDescription storage =
-    do hPutStrLn stderr $ "set desc: " ++ show mDescription
-       atomically $ do 
+    do atomically $ do 
          mtFi <- Map.lookup fId <$>
                  readTVar (storageFiles storage)
          case mtFi of
