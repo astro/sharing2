@@ -10,13 +10,24 @@ function generateToken() {
 
 function fileSize(input) {
     var total = 0;
-    for(var i = 0; i < input.files.length; i++) {
-	total += input.files[i].size;
+    if (input.files && input.files.length)
+        for(var i = 0; i < input.files.length; i++) {
+            var f = input.files[i];
+	    total += i.fileSize || i.size;
+        }
+    else if (window.ActiveXObject) {
+        try {
+            var fso = new ActiveXObject("Scripting.FileSystemObject");
+            var f = fso.getFile(input.value);
+            if (f)
+                total = f.size;
+        } catch (e) {
+        }
     }
     return total;
 }
 
-function humanRate(rate) {
+function humanSize(rate) {
     var unit = "";
     var units = "KMGT";
     while(rate > 1024 && units) {
@@ -28,7 +39,7 @@ function humanRate(rate) {
 	rate = Math.round(rate * 10) / 10;
     else
 	rate = Math.round(rate);
-    return rate + " " + unit + "B/s";
+    return rate + " " + unit + "B";
 }
 
 var form = $('form');
@@ -85,11 +96,16 @@ form.submit(function() {
 		     errorRetries = 0;
 
 		     if (data.bytes && data.rate) {
-			 progress.find('.percent').text(
-			     Math.floor(100 * data.bytes / totalBytes) + "%"
-			 );
+                         if (totalBytes)
+			     progress.find('.percent').text(
+			         Math.floor(100 * data.bytes / totalBytes) + "%"
+			     );
+                         else
+                             progress.find('.percent').text(
+                                 humanSize(data.bytes)
+                             );
 			 progress.find('progress').prop('value', data.bytes);
-			 progress.find('.rate').text(humanRate(data.rate));
+			 progress.find('.rate').text(humanSize(data.rate) + "/s");
 			 pollProgress();
 		     } else if (data.link) {
 			 progress.empty();
@@ -103,7 +119,8 @@ form.submit(function() {
 		     }
 		 },
 		 error: function(e) {
-		     console.error(e);
+                     if (window.console)
+		         console.error(e);
 		     if (errorRetries) {
 			 errorRetries--;
 			 setTimeout(pollProgress, 500);
