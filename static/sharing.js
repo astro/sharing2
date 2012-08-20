@@ -57,8 +57,9 @@ $('form input:submit').hide();
  * Submit handler: set description, update progress
  */
 form.submit(function() {
-    var progress = $('<p><progress></progress><span class="rate"></span></p>');
-    progress.find('progress').prop('max', fileSize($('form input:file')[0]));
+    var progress = $('<p><span class="percent"></span><progress></progress><span class="rate"></span></p>');
+    var totalBytes = fileSize($('form input:file')[0]);
+    progress.find('progress').prop('max', totalBytes);
     form.after(progress);
     var desc = $("<div class='description'><h2>Add a description</h2><textarea rows='4' cols='40'></textarea><input type='submit' value='Add'></div>");
     desc.find('input').click(function() {
@@ -84,6 +85,9 @@ form.submit(function() {
 		     errorRetries = 0;
 
 		     if (data.bytes && data.rate) {
+			 progress.find('.percent').text(
+			     Math.floor(100 * data.bytes / totalBytes) + "%"
+			 );
 			 progress.find('progress').prop('value', data.bytes);
 			 progress.find('.rate').text(humanRate(data.rate));
 			 pollProgress();

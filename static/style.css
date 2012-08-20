@@ -42,8 +42,8 @@ p.hint {
     font-size: 70%;
     font-style: oblique;
 }
-.rate {
-    margin: 0 0 0 0.2em;
+.percent, .rate {
+    margin: 0 0.1em;
     color: #888;
     font-size: 80%;
 }
