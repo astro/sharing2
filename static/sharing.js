@@ -4,7 +4,7 @@
 
 function generateToken() {
     return (new Date().getTime()) +
-	"+" +
+	"-" +
 	Math.round(999999 * Math.random());
 }
 
@@ -13,7 +13,7 @@ function fileSize(input) {
     if (input.files && input.files.length)
         for(var i = 0; i < input.files.length; i++) {
             var f = input.files[i];
-	    total += i.fileSize || i.size;
+	    total += f.fileSize || f.size;
         }
     else if (window.ActiveXObject) {
         try {
@@ -60,7 +60,7 @@ form.attr('action', form.attr('action') + token);
  * Auto Submit:
  */
 $('form input:file').change(function() {
-    $('form').submit();
+    form.submit();
 });
 $('form input:submit').hide();
 
@@ -70,7 +70,7 @@ $('form input:submit').hide();
 form.submit(function() {
     var progress = $('<p><span class="percent"></span><progress></progress><span class="rate"></span></p>');
     var totalBytes = fileSize($('form input:file')[0]);
-    progress.find('progress').prop('max', totalBytes);
+    progress.find('progress').attr('max', totalBytes);
     form.after(progress);
     var desc = $("<div class='description'><h2>Add a description</h2><textarea rows='4' cols='40'></textarea><input type='submit' value='Add'></div>");
     desc.find('input').click(function() {
@@ -104,7 +104,7 @@ form.submit(function() {
                              progress.find('.percent').text(
                                  humanSize(data.bytes)
                              );
-			 progress.find('progress').prop('value', data.bytes);
+			 progress.find('progress').attr('value', data.bytes);
 			 progress.find('.rate').text(humanSize(data.rate) + "/s");
 			 pollProgress();
 		     } else if (data.link) {
@@ -120,7 +120,7 @@ form.submit(function() {
 		 },
 		 error: function(e) {
                      if (window.console)
-		         console.error(e);
+		         console.error(e && e.stack || e);
 		     if (errorRetries) {
 			 errorRetries--;
 			 setTimeout(pollProgress, 500);
