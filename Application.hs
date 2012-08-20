@@ -2,11 +2,8 @@ module Application where
 
 import Yesod hiding (fileName)
 import Text.Hamlet
-import qualified Network.Wai as Wai
 import System.IO
 import Control.Applicative
-import Data.Conduit
-import qualified Data.Conduit.List as CL
 import Control.Monad
 import Yesod.Static
 import qualified Data.Text as T
@@ -62,7 +59,7 @@ instance Yesod Sharing where
     makeSessionBackend = const $ return Nothing
 
     -- | TODO
-    maximumContentLength _ _ = 1024 ^ 3
+    maximumContentLength _ _ = 1024 ^ (3 :: Int)
     
 getHomeR :: GHandler sub Sharing RepHtml
 getHomeR =
@@ -72,6 +69,7 @@ getHomeR =
      defaultLayout $ do
        setTitle "Sharing is Caring"
        toWidget [hamlet|
+                 $newline always
                  <h1>
                    <a href=@{HomeR}>
                      Sharing is Caring
@@ -99,10 +97,13 @@ getHomeR =
 
     where humanSize :: (Integral a, Show a) => a -> String
           humanSize n = let (n', unit) = humanSize' $ fromIntegral n
-                            ns | n' < 10 = show $
-                                           fromIntegral (truncate $ n' * 10) / 10
-                               | otherwise = show $ truncate n'
+                            ns | n' < 10 = show $ round10 n'
+                               | otherwise = show (truncate n' :: Integer)
                         in ns ++ " " ++ unit ++ "B"
+          round10 :: Double -> Double
+          round10 n = let n' :: Integer
+                          n' = truncate $ n * 10
+                      in fromIntegral n' / 10
 
           humanSize' :: Double -> (Double, String)
           humanSize' n = foldl (\(n', unit) unit' ->
@@ -138,7 +139,8 @@ postUploadR token =
        storage <- sharingStorage <$> getYesod
        file <- liftIO $ newFile storage
        committed <- liftIO $ newIORef False
-       lift $ register $
+       _ <- lift $ 
+            register $
             do committed' <- readIORef committed
                when (not committed') $
                     uFileDiscard file
@@ -164,6 +166,7 @@ postUploadR token =
        defaultLayout $ do
          setTitle "Uploaded!"
          toWidget [hamlet|
+                   $newline always
                    <p>
                      Thanks. #
                      <a href=@{HomeR}>Return!
@@ -182,7 +185,9 @@ postUploadR token =
                   do 
                     -- 1: Setup
                     tokenPool <- sharingTokens <$> getYesod
-                    liftIO $ newToken token (Uploading progress Nothing) tokenPool
+                    tokenInserted <- liftIO $ newToken token (Uploading progress Nothing) tokenPool
+                    when (not tokenInserted) $
+                         invalidArgs ["Token collission"]
                      
                     -- 2: Get called when upload data (filename) is
                     -- known, but keep token around for setting description
@@ -193,8 +198,8 @@ postUploadR token =
                                          readToken token tokenPool
                                let mDescription = 
                                        case mToken of
-                                         Just (Uploading _ mDescription) ->
-                                             mDescription
+                                         Just (Uploading _ mDescription') ->
+                                             mDescription'
                                          _ ->
                                              Nothing
                                now <- liftIO getPOSIXTime
@@ -269,7 +274,6 @@ getProgressR token =
        case mState of
          Just (Uploading progress _) ->
              do (bytes, rate) <- liftIO $ readUploadProgress progress
-                liftIO $ hPrint stderr ("progress", bytes, rate)
                 return $ RepJson $ toContent $
                        object [ "bytes" .= bytes
                               , "rate" .= rate

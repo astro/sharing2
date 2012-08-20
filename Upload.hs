@@ -56,10 +56,10 @@ acceptUpload waiReq progress newFile =
                        yield s
                        countBytes
                )
-           backend "file" info =
+           backend "file" _info =
                do countBytes =$ sinkFile newFile
                   return newFile
-           backend _ info =
+           backend _name _info =
                let discard = await >>=
                              maybe (return "")
                              (const discard)

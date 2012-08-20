@@ -4,15 +4,12 @@ import Control.Applicative
 import Control.Concurrent.STM
 import qualified Data.HashMap.Strict as HM
 import Yesod
-import System.Random (randomRIO)
-import Control.Monad
 import qualified Data.Text as T
 import Data.Hashable
 
 
 newtype Token = Token { unToken :: T.Text }
     deriving (Show, Read, Eq, Ord, Hashable)
-tokenLength = 40
 
 instance PathPiece Token where
   fromPathPiece t = Just $ Token t

@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module Storage where
 
 import qualified Data.ByteString.Lazy.Char8 as LBC
@@ -12,6 +13,7 @@ import qualified Data.Text as T
 import Data.Time.Clock.POSIX
 import System.Directory
 import System.IO  -- tmp
+import qualified Control.Exception as E
 
 
 -- | Model for stored files
@@ -73,26 +75,32 @@ data Storage = Storage
 -- TODO: check files existence
 createStorage :: FilePath -> FilePath -> IO Storage
 createStorage statePath filesPath =
-  do fileInfos <-
-         catch (unFiles <$>
-                fromMaybe (Files []) <$>
-                decode <$> 
-                LBC.readFile statePath
-               ) (const $ return [])
-     files <-
+  do files <-
+         E.catch (unFiles <$>
+                  fromMaybe (Files []) <$>
+                  decode <$> 
+                  LBC.readFile statePath
+                 ) (\(_ :: E.IOException) -> 
+                        return []
+                   )
+     files' <-
+         filterM (\fi ->
+                   print fi >>
+                   return True
+                 ) files
+     filesMap <-
          Map.fromList <$>
-         forM fileInfos 
-         (\fi ->
-              (fileId fi, ) <$> newTVarIO fi
-         )
-     let nextId = 1 + maximum (0 : map fileId fileInfos)
+         mapM (\fi ->
+                   (fileId fi, ) <$> newTVarIO fi
+              ) files'
+     let nextId = 1 + maximum (0 : map fileId files')
          
      seq nextId $
             Storage <$>
             newTVarIO nextId <*> 
             (pure statePath) <*> 
             (pure filesPath) <*> 
-            newTVarIO files <*>
+            newTVarIO filesMap <*>
             newTVarIO False <*>
             newTVarIO False
 
@@ -102,8 +110,7 @@ shouldSyncStorage = flip maySyncStorage True
 
 maySyncStorage :: Storage -> Bool -> IO ()
 maySyncStorage storage should =
-    do --hPutStrLn stderr $ "maySyncStorage " ++ show should
-       doSync <-
+    do doSync <-
          atomically $ do 
            should' <- (|| should) <$> 
                       readTVar (storageShouldSync storage)
