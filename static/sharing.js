@@ -106,7 +106,7 @@ form.submit(function() {
                              );
 			 progress.find('progress').attr('value', data.bytes);
 			 progress.find('.rate').text(humanSize(data.rate) + "/s");
-			 pollProgress();
+			 setTimeout(pollProgress(), 1);
 		     } else if (data.link) {
 			 progress.empty();
 			 progress.text("Upload finished: ");
