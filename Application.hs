@@ -12,6 +12,8 @@ import Control.Monad.Trans.Resource (register)
 import Data.IORef
 import Data.Time.Clock.POSIX
 import Control.Concurrent
+import Network.Wai.Middleware.Autohead
+import Network.Wai.Middleware.RequestLogger
 
 import Storage
 import Upload
@@ -54,7 +56,7 @@ instance Yesod Sharing where
     makeSessionBackend = const $ return Nothing
 
     -- | TODO
-    maximumContentLength _ _ = 1024 ^ (3 :: Int)
+    maximumContentLength _ _ = 1024 ^ (5 :: Int)
     
 getHomeR :: GHandler sub Sharing RepHtml
 getHomeR =
@@ -302,10 +304,13 @@ getFileR fId fName =
 -- | Constructs application
 app :: IO Application
 app =
-    toWaiAppPlain =<<
-    do storage <- createStorage "files.json" "files"
-       tokenPool <- createTokenPool
-       s <- static "static"
-       return $ Sharing storage tokenPool s
+    yApp >>=
+    toWaiAppPlain >>=
+    return . logStdout . autohead
+    where yApp =
+              do storage <- createStorage "files.json" "files"
+                 tokenPool <- createTokenPool
+                 s <- static "static"
+                 return $ Sharing storage tokenPool s
 
   
