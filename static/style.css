@@ -11,13 +11,13 @@ h1 {
     font-style: italic;
     text-align: center;
     font-variant: small-caps;
-    padding: 0.25em 1em;
+    padding: 0.1em 1em;
     margin: 0;
     color: #666;
 }
 #page {
     margin: 0 auto;
-    padding: 0em 0.5em;
+    padding: 0.5em 0.5em;
     max-width: 25em;
     background-color: white;
     border-radius: 0.5em;
