@@ -110,6 +110,7 @@ getHomeR =
                                     then (n', unit)
                                     else (n' / 1024, [unit'])
                                ) (n, "") "KMGT"
+
           pluralize :: Integer -> String -> String
           pluralize 1 w = "1 " ++ w
           pluralize n w = show n ++ " " ++ w ++ "s"
@@ -133,7 +134,6 @@ getHomeR =
 postUploadR :: Token -> GHandler sub Sharing RepHtml
 postUploadR token =
     do waiReq <- reqWaiRequest <$> getRequest
-       liftIO $ hPutStrLn stderr $ "headers: " ++ show (Wai.requestHeaders waiReq)
        
        storage <- sharingStorage <$> getYesod
        file <- liftIO $ newFile storage
@@ -141,68 +141,24 @@ postUploadR token =
        lift $ register $
             do committed' <- readIORef committed
                when (not committed') $
-                    hPutStrLn stderr "discard" >>
                     uFileDiscard file
        
        progress <- liftIO $ newUploadProgress
-       tokenPool <- sharingTokens <$> getYesod
-       let useToken = not $ T.null $ unToken token
-       when useToken $ do
-         liftIO $ newToken token (Uploading progress Nothing) tokenPool
-         liftIO $ hPutStrLn stderr $ "New token " ++ show token
-         let tokenCleanInterval = 30
-             tokenCleaner = do
-               threadDelay tokenCleanInterval
-               now <- getPOSIXTime
-               let canDelete (Uploaded _ _ lastActivity) =
-                     lastActivity + tokenCleanInterval < now
-                   canDelete _ =
-                     True
-               deleted <-
-                   mayDeleteToken token canDelete tokenPool
-               hPutStrLn stderr $ "Delete token " ++ show token ++ ": " ++ show deleted
-               when (not deleted)
-                    tokenCleaner
-         _ <- register $ do
-                _ <- forkIO $ tokenCleaner
-                return ()
-         return ()
-       
+       tokenUploadedHandler <- createTokenHandlers progress
 
        mFileInfo <-
          lift $ 
          acceptUpload waiReq progress $ uFilePath file
-       liftIO $ hPutStrLn stderr $ "acceptUpload -> " ++ show mFileInfo
        
        case mFileInfo of
-         Just (name, type_, size) -> do
-                        link <- ($ FileR (uFileId file) (bToT name)) <$>
-                                getUrlRender
-                        liftIO $ do
-                          mDescription <- case useToken of
-                            True ->
-                                do mToken <- readToken token tokenPool
-                                   let mDescription = case mToken of
-                                         Just (Uploading _ mDescription) ->
-                                             mDescription
-                                         _ ->
-                                             Nothing
-                                   now <- getPOSIXTime
-                                   writeToken token Uploaded 
-                                                  { uploadFileId = uFileId file
-                                                  , uploadLink = link
-                                                  , uploadLastActivity = now
-                                                  } tokenPool
-                                   return mDescription
-                            False ->
-                                return Nothing
-                          uFileCommit file (bToT name) (bToT type_) size mDescription
-                          writeIORef committed True
-         _ -> do
-           -- discarded by action register'ed above
-           when useToken $
-                liftIO $
-                deleteToken token tokenPool
+         Just (name, type_, size) -> 
+             do mDescription <- tokenUploadedHandler (uFileId file) (bToT name)
+                liftIO $ do
+                        uFileCommit file (bToT name) (bToT type_) size mDescription
+                        writeIORef committed True
+         _ ->
+             -- Token will be deleted by register'ed tokenCleaner
+             return ()
              
        defaultLayout $ do
          setTitle "Uploaded!"
@@ -211,8 +167,56 @@ postUploadR token =
                      Thanks. #
                      <a href=@{HomeR}>Return!
                    |]
-           where bToT = T.pack . BC.unpack
-    
+           
+    where bToT = T.pack . BC.unpack
+          
+          useToken = not $ T.null $ unToken token
+          
+          createTokenHandlers progress
+              | not useToken =
+                  return $ const $ const $ return Nothing
+              | otherwise = 
+                  do tokenPool <- sharingTokens <$> getYesod
+                     liftIO $ newToken token (Uploading progress Nothing) tokenPool
+                     let tokenCleanInterval = 30
+                         tokenCleaner = do
+                           threadDelay tokenCleanInterval
+                           now <- getPOSIXTime
+                           let canDelete (Uploaded _ _ lastActivity) =
+                                   lastActivity + tokenCleanInterval < now
+                               canDelete _ =
+                                   True
+                           deleted <-
+                               mayDeleteToken token canDelete tokenPool
+                           hPutStrLn stderr $ "Delete token " ++ show token ++ ": " ++ show deleted
+                           when (not deleted)
+                                tokenCleaner
+                     _ <- register $ do
+                            _ <- forkIO $ tokenCleaner
+                            return ()
+
+                     let tokenUploadedHandler fId name =
+                             do link <- ($ FileR fId name) <$>
+                                        getUrlRender
+                                mToken <- liftIO $
+                                          readToken token tokenPool
+                                let mDescription = 
+                                        case mToken of
+                                          Just (Uploading _ mDescription) ->
+                                              mDescription
+                                          _ ->
+                                              Nothing
+                                now <- liftIO getPOSIXTime
+                                liftIO $
+                                       writeToken token 
+                                       Uploaded 
+                                       { uploadFileId = fId
+                                       , uploadLink = link
+                                       , uploadLastActivity = now
+                                       } tokenPool
+                                return mDescription
+                     return tokenUploadedHandler
+
 postDescribeR :: Token -> GHandler sub Sharing RepJson
 postDescribeR token =
     do description <- lookupPostParam "description"
