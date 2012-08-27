@@ -14,6 +14,7 @@ import Data.Time.Clock.POSIX
 import Control.Concurrent
 import Network.Wai.Middleware.Autohead
 import Network.Wai.Middleware.RequestLogger
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 import Storage
 import Upload
@@ -152,9 +153,10 @@ postUploadR token =
        
        case mFileInfo of
          Just (name, type_, size) -> 
-             do mDescription <- tokenUploadedHandler (uFileId file) (bToT name)
+             do let name' = decodeUtf8 name
+                mDescription <- tokenUploadedHandler (uFileId file) name'
                 liftIO $ do
-                        uFileCommit file (bToT name) (bToT type_) size mDescription
+                        uFileCommit file name' (decodeUtf8 type_) size mDescription
                         writeIORef committed True
          _ ->
              -- Token will be deleted by register'ed tokenCleaner
@@ -169,9 +171,7 @@ postUploadR token =
                      <a href=@{HomeR}>Return!
                    |]
            
-    where bToT = T.pack . BC.unpack
-          
-          useToken = not $ T.null $ unToken token
+    where useToken = not $ T.null $ unToken token
           
           tokenLifetime = 30
           tokenCleanInterval = tokenLifetime * 1000 * 1000
@@ -290,7 +290,7 @@ data RepFile = RepFile T.Text FilePath
 
 instance HasReps RepFile where
     chooseRep (RepFile ct path) _ =
-        return ( BC.pack $ T.unpack ct
+        return ( encodeUtf8 ct
                , ContentFile path Nothing
                )
 
