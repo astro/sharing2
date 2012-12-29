@@ -80,9 +80,8 @@ a:visited {
 .desc {
     display: block;
     padding: 0 0 0 16px;
-    font-size: 80%;
-    color: #888;
-    white-space: pre;
+    font-size: 60%;
+    color: #666;
 }
 .stats {
     display: block;
