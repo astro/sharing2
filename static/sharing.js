@@ -54,7 +54,7 @@ form.attr('target', 'blackhole');
  * Token for progress polling
  */
 var token = generateToken();
-form.attr('action', form.attr('action') + token);
+form.attr('action', form.attr('action').replace(/-$/, "") + token);
 
 /**
  * Auto Submit:
