@@ -15,6 +15,8 @@ import Control.Concurrent
 import Network.Wai.Middleware.Autohead
 import Network.Wai.Middleware.RequestLogger
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import qualified System.Remote.Monitoring as EKG
+import qualified System.Remote.Counter as EKGCounter
 
 import Storage
 import Upload
@@ -38,6 +40,9 @@ data Sharing = Sharing
     { sharingStorage :: Storage
     , sharingTokens :: TokenPool TokenState
     , getStatic :: Static
+    , countIndex :: IO ()
+    , countUp :: IO ()
+    , countDown :: IO ()
     }
     
 mkYesod "Sharing" [parseRoutes|
@@ -61,7 +66,8 @@ instance Yesod Sharing where
     
 getHomeR :: GHandler sub Sharing RepHtml
 getHomeR =
-  do files <- sharingStorage <$> getYesod >>= liftIO . allFiles
+  do getYesod >>= liftIO . countIndex
+     files <- sharingStorage <$> getYesod >>= liftIO . allFiles
      showAge <- liftIO getPOSIXTime >>= \now ->
                 return $ formatAge . (now -)
      defaultLayout $ do
@@ -132,7 +138,8 @@ getHomeR =
 
 postUploadR :: Token -> GHandler sub Sharing RepHtml
 postUploadR token =
-    do waiReq <- reqWaiRequest <$> getRequest
+    do getYesod >>= liftIO . countUp
+       waiReq <- reqWaiRequest <$> getRequest
        
        storage <- sharingStorage <$> getYesod
        file <- liftIO $ newFile storage
@@ -297,6 +304,7 @@ instance HasReps RepFile where
 -- TODO: evaluate `Range' header for Wai.FilePart
 getFileR :: Integer -> T.Text -> GHandler sub Sharing RepFile
 getFileR fId fName =
+    getYesod >>= liftIO . countDown >>
     sharingStorage <$> getYesod >>=
     liftIO . getFile fId fName >>=
     maybe notFound (return . uncurry RepFile)
@@ -305,13 +313,17 @@ getFileR fId fName =
 -- | Constructs application
 app :: IO Application
 app =
+    EKG.forkServer "localhost" 8081 >>=
     yApp >>=
     toWaiAppPlain >>=
     return . logStdout . autohead
-    where yApp =
+    where yApp ekg =
               do storage <- createStorage "files.json" "files"
                  tokenPool <- createTokenPool
                  s <- static "static"
-                 return $ Sharing storage tokenPool s
+                 Sharing storage tokenPool s <$>
+                         (EKGCounter.inc <$> EKG.getCounter "index" ekg) <*>
+                         (EKGCounter.inc <$> EKG.getCounter "up" ekg) <*>
+                         (EKGCounter.inc <$> EKG.getCounter "down" ekg)
 
   
