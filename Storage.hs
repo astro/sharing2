@@ -191,7 +191,7 @@ allFiles storage =
     readTVar (storageFiles storage) >>=
     mapM (readTVar . snd) . Map.toDescList
 
-getFile :: Integer -> T.Text -> Storage -> IO (Maybe (T.Text, FilePath))
+getFile :: Integer -> T.Text -> Storage -> IO (Maybe (T.Text, FilePath, Integer))
 getFile fId fName storage =
     let getFile' = do
           mtFi <- Map.lookup fId <$> 
@@ -209,6 +209,7 @@ getFile fId fName storage =
                                        Just 
                                        ( fileType fi
                                        , storageFilesPath storage ++ "/" ++ show (fileId fi)
+                                       , fileSize fi
                                        )
                      _ ->
                          return Nothing

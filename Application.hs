@@ -301,30 +301,32 @@ getFileR fId fName =
     getYesod >>= liftIO . countDown >>
     sharingStorage <$> getYesod >>=
     liftIO . getFile fId fName >>=
-    maybe notFound (\(ct, path) -> 
+    maybe notFound (\(ct, path, size) -> 
                         lookup "Range" <$> 
                         Wai.requestHeaders <$> 
                         reqWaiRequest <$> 
                         getRequest >>= \mRange ->
-                        case mRange of
-                          Nothing ->
-                              sendWaiResponse $ Wai.ResponseFile ok200
-                                    [("Content-Type", encodeUtf8 $ ct)]
-                                    path Nothing
-                          Just range ->
-                              do let mPart = parseRange range
-                                 sendWaiResponse $ Wai.ResponseFile partialContent206 
+                        case (mRange, mRange >>= parseRange size) of
+                          (Just range, mPart@(Just (Wai.FilePart start size))) ->
+                              sendWaiResponse $ Wai.ResponseFile partialContent206 
                                      [("Content-Type", encodeUtf8 $ ct),
-                                      ("Range", range)]
+                                      ("Content-Range", BC.pack $ "bytes " ++ show start ++ "-" ++ show (start + size - 1) ++ "/" ++ show size)]
                                      path mPart
+                          _ ->
+                              sendWaiResponse $ Wai.ResponseFile ok200
+                                    [("Content-Type", encodeUtf8 $ ct),
+                                     ("Content-Length", BC.pack $ show size)]
+                                    path Nothing
                    )
-    where parseRange = either (const Nothing) Just . PC.parseOnly rangeHeader
-          rangeHeader =
-              do PC.string "bytes "
+    where parseRange size = either (const Nothing) Just . PC.parseOnly (rangeHeader size)
+          rangeHeader size =
+              do PC.string "bytes="
                  PC.I start <- PC.number
                  PC.char '-'
-                 PC.I end <- PC.number
-                 return $ Wai.FilePart start (end - start)
+                 end <- (PC.number >>= \(PC.I end) ->
+                         return end) <|> 
+                        return (size - 1)
+                 return $ Wai.FilePart start $ end - start + 1
 
 -- | Constructs application
 app :: IO Application
@@ -341,5 +343,3 @@ app =
                          (EKGCounter.inc <$> EKG.getCounter "index" ekg) <*>
                          (EKGCounter.inc <$> EKG.getCounter "up" ekg) <*>
                          (EKGCounter.inc <$> EKG.getCounter "down" ekg)
-
-  
