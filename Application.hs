@@ -12,11 +12,14 @@ import Control.Monad.Trans.Resource (register)
 import Data.IORef
 import Data.Time.Clock.POSIX
 import Control.Concurrent
+import qualified Network.Wai as Wai
 import Network.Wai.Middleware.Autohead
 import Network.Wai.Middleware.RequestLogger
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified System.Remote.Monitoring as EKG
 import qualified System.Remote.Counter as EKGCounter
+import qualified Data.Attoparsec.ByteString.Char8 as PC
+import Network.HTTP.Types.Status (ok200, partialContent206)
 
 import Storage
 import Upload
@@ -293,22 +296,35 @@ getProgressR token =
          _ ->
              notFound
 
-data RepFile = RepFile T.Text FilePath
-
-instance HasReps RepFile where
-    chooseRep (RepFile ct path) _ =
-        return ( encodeUtf8 ct
-               , ContentFile path Nothing
-               )
-
--- TODO: evaluate `Range' header for Wai.FilePart
-getFileR :: Integer -> T.Text -> GHandler sub Sharing RepFile
+getFileR :: Integer -> T.Text -> GHandler sub Sharing RepPlain
 getFileR fId fName =
     getYesod >>= liftIO . countDown >>
     sharingStorage <$> getYesod >>=
     liftIO . getFile fId fName >>=
-    maybe notFound (return . uncurry RepFile)
-
+    maybe notFound (\(ct, path) -> 
+                        lookup "Range" <$> 
+                        Wai.requestHeaders <$> 
+                        reqWaiRequest <$> 
+                        getRequest >>= \mRange ->
+                        case mRange of
+                          Nothing ->
+                              sendWaiResponse $ Wai.ResponseFile ok200
+                                    [("Content-Type", encodeUtf8 $ ct)]
+                                    path Nothing
+                          Just range ->
+                              do let mPart = parseRange range
+                                 sendWaiResponse $ Wai.ResponseFile partialContent206 
+                                     [("Content-Type", encodeUtf8 $ ct),
+                                      ("Range", range)]
+                                     path mPart
+                   )
+    where parseRange = either (const Nothing) Just . PC.parseOnly rangeHeader
+          rangeHeader =
+              do PC.string "bytes "
+                 PC.I start <- PC.number
+                 PC.char '-'
+                 PC.I end <- PC.number
+                 return $ Wai.FilePart start (end - start)
 
 -- | Constructs application
 app :: IO Application
