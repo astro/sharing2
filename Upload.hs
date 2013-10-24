@@ -45,7 +45,7 @@ increaseUploadProgress progress delta =
 -- * Write file data directly to the destined location
 -- * Update progress every chunk
 acceptUpload :: Request -> UploadProgress -> FilePath 
-             -> ResourceT IO (Maybe (B.ByteString, B.ByteString, Integer))
+             -> IO (Maybe (B.ByteString, B.ByteString, Integer))
 acceptUpload waiReq progress newFile =
     do let countBytes =
                await >>=
@@ -67,7 +67,8 @@ acceptUpload waiReq progress newFile =
        
        case getRequestBodyType waiReq of
          Just rbt ->
-             do (_, files) <- requestBody waiReq $$ sinkRequestBody backend rbt
+             do (_, files) <- runResourceT $
+                              requestBody waiReq $$ sinkRequestBody backend rbt
                 liftIO $ hPutStrLn stderr $ "sinkRequestBody " ++ show newFile ++ ": " ++ show files
                 case "file" `lookup` files of
                   Just fileInfo ->

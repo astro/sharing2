@@ -65,9 +65,9 @@ instance Yesod Sharing where
     makeSessionBackend = const $ return Nothing
 
     -- | TODO
-    maximumContentLength _ _ = 1024 ^ (5 :: Int)
+    maximumContentLength _ _ = Just $ 1024 ^ 5
     
-getHomeR :: GHandler sub Sharing RepHtml
+getHomeR :: Handler RepHtml
 getHomeR =
   do getYesod >>= liftIO . countIndex
      files <- sharingStorage <$> getYesod >>= liftIO . allFiles
@@ -139,7 +139,7 @@ getHomeR =
               where n' :: Integer
                     n' = truncate n
 
-postUploadR :: Token -> GHandler sub Sharing RepHtml
+postUploadR :: Token -> Handler RepHtml
 postUploadR token =
     do getYesod >>= liftIO . countUp
        waiReq <- reqWaiRequest <$> getRequest
@@ -147,8 +147,7 @@ postUploadR token =
        storage <- sharingStorage <$> getYesod
        file <- liftIO $ newFile storage
        committed <- liftIO $ newIORef False
-       _ <- lift $ 
-            register $
+       _ <- register $
             do committed' <- readIORef committed
                when (not committed') $
                     uFileDiscard file
@@ -193,6 +192,7 @@ postUploadR token =
                   do 
                     -- 1: Setup
                     tokenPool <- sharingTokens <$> getYesod
+                    liftIO $ putStrLn $ "New token: " ++ show token
                     tokenInserted <- liftIO $ newToken token (Uploading progress Nothing) tokenPool
                     when (not tokenInserted) $
                          invalidArgs ["Token collission"]
@@ -247,7 +247,7 @@ postUploadR token =
 
                     return tokenUploadedHandler
 
-postDescribeR :: Token -> GHandler sub Sharing RepJson
+postDescribeR :: Token -> Handler RepJson
 postDescribeR token =
     do description <- lookupPostParam "description"
        tokenPool <- sharingTokens <$> getYesod
@@ -256,7 +256,7 @@ postDescribeR token =
            readToken token tokenPool
        storage <- sharingStorage <$> getYesod
        let response = RepJson $ toContent $
-                      object ([] :: [(T.Text, String)])
+                      object []
        liftIO $ hPutStrLn stderr $ "postDescribeR, tokenState=" ++ show mState
        case mState of
          Just upload@(Uploading _ Nothing) -> 
@@ -273,12 +273,13 @@ postDescribeR token =
              notFound
 
   
-getProgressR :: Token -> GHandler sub Sharing RepJson
+getProgressR :: Token -> Handler RepJson
 getProgressR token =
     do tokenPool <- sharingTokens <$> getYesod
        mState <-
            liftIO $
            readToken token tokenPool
+       liftIO $ putStrLn $ "token state: " ++ show mState
        case mState of
          Just (Uploading progress _) ->
              do (bytes, rate) <- liftIO $ readUploadProgress progress
@@ -296,7 +297,7 @@ getProgressR token =
          _ ->
              notFound
 
-getFileR :: Integer -> T.Text -> GHandler sub Sharing RepPlain
+getFileR :: Integer -> T.Text -> Handler RepPlain
 getFileR fId fName =
     getYesod >>= liftIO . countDown >>
     sharingStorage <$> getYesod >>=

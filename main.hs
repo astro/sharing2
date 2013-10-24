@@ -12,7 +12,7 @@ main :: IO ()
 main = app >>=
        runSettings (defaultSettings
                     { settingsHost = HostIPv6
-                    , settingsPort = 8000
+                    , settingsPort = 8026
                     , settingsOnException = \e ->
                                             hPrint stdout e
                                             >>
