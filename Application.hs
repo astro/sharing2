@@ -20,6 +20,7 @@ import qualified System.Remote.Monitoring as EKG
 import qualified System.Remote.Counter as EKGCounter
 import qualified Data.Attoparsec.ByteString.Char8 as PC
 import Network.HTTP.Types.Status (ok200, partialContent206)
+import Network.Wai.Middleware.HttpAuth
 
 import Storage
 import Upload
@@ -335,7 +336,7 @@ app =
     EKG.forkServer "localhost" 8081 >>=
     yApp >>=
     toWaiAppPlain >>=
-    return . logStdout . autohead
+    return . logStdout . autohead . auth
     where yApp ekg =
               do storage <- createStorage "files.json" "files"
                  tokenPool <- createTokenPool
@@ -344,3 +345,9 @@ app =
                          (EKGCounter.inc <$> EKG.getCounter "index" ekg) <*>
                          (EKGCounter.inc <$> EKG.getCounter "up" ekg) <*>
                          (EKGCounter.inc <$> EKG.getCounter "down" ekg)
+          auth = basicAuth
+                 (\user password ->
+                      return $
+                      user == "k-ot" && password == "k-ot"
+                 )
+                 "Sharing is Caring"
